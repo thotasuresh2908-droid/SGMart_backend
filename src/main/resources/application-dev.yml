@@ -1,0 +1,9 @@
+# Local development: run with  -Dspring-boot.run.profiles=dev
+spring:
+  flyway:
+    # Adds the prototype's sample products, partners and a test manager
+    locations: classpath:db/migration,classpath:db/dev-data
+
+logging:
+  level:
+    com.sgmart: DEBUG

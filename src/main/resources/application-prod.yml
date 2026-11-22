@@ -1,0 +1,11 @@
+# Production behind Nginx with HTTPS
+server:
+  forward-headers-strategy: native
+  servlet:
+    session:
+      cookie:
+        secure: true
+
+logging:
+  level:
+    root: INFO
