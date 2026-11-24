@@ -1,14 +1,27 @@
-FROM maven:3.9-eclipse-temurin-21 AS build
-WORKDIR /workspace
-COPY pom.xml .
-RUN mvn -q -B dependency:go-offline
-COPY src ./src
-RUN mvn -q -B -DskipTests package
 
+# Build stage
+FROM maven:3.9-eclipse-temurin-21 AS build
+
+WORKDIR /workspace
+
+COPY pom.xml .
+COPY src ./src
+
+RUN mvn clean package -DskipTests
+
+# Runtime stage
 FROM eclipse-temurin:21-jre
+
 WORKDIR /app
-RUN useradd --system --no-create-home SG mart
-USER SGMart
+
+# Create a valid Linux system user
+RUN useradd --system --no-create-home sgmart
+
+# Switch to non-root user
+USER sgmart
+
+# Copy application JAR
 COPY --from=build /workspace/target/SGMart-*.jar app.jar
-EXPOSE 9001
-ENTRYPOINT ["java", "-jar", "/app/app.jar"]
+
+# Start application
+ENTRYPOINT ["java", "-jar", "app.jar"]
