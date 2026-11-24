@@ -17,6 +17,6 @@ COPY --from=build /workspace/target/sgmart-api-0.1.0-SNAPSHOT.jar app.jar
 
 USER sgmart
 
-EXPOSE 8080
+EXPOSE 9001
 
 ENTRYPOINT ["java", "-jar", "app.jar"]
