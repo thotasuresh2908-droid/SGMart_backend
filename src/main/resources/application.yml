@@ -1,5 +1,7 @@
 # SGMart API - settings shared by every environment.
 # Secrets come from environment variables (see .env.example); never put them in this file.
+server:
+  port: ${PORT:9001}
 spring:
   application:
     name: sgmart-api
