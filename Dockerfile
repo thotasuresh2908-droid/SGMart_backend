@@ -11,9 +11,12 @@ FROM eclipse-temurin:21-jre
 
 WORKDIR /app
 
-RUN useradd --system --no-create-home sgmart
+# Create the app user, and a folder it is allowed to write to (product images).
+RUN useradd --system --no-create-home sgmart \
+ && mkdir -p /app/data/images \
+ && chown -R sgmart:sgmart /app
 
-COPY --from=build /workspace/target/sgmart-api-0.1.0-SNAPSHOT.jar app.jar
+COPY --from=build --chown=sgmart:sgmart /workspace/target/sgmart-api-0.1.0-SNAPSHOT.jar app.jar
 
 USER sgmart
 
