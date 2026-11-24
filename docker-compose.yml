@@ -1,45 +1,71 @@
-# LineBook backend + MySQL.
+# SGMart: MySQL + backend for local testing with Docker.
 #
-#   docker compose up --build                                  # http://localhost:9000
+#   1. Copy .env.example to .env and fill in GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET,
+#      SGMART_OWNER_EMAIL and SGMART_STORE_PHONE (10 digits, no +91).
+#   2. docker compose up --build
+#   3. Backend health: http://localhost:9001/actuator/health
+#      Web app:        cd sgmart-web && npm run dev   ->  http://localhost:5173
 #
-# The database starts empty apart from the package catalogue. Set SGmart_ADMIN_EMAIL and
-# Sgmart_ADMIN_PASSWORD below to get your first sign-in, then add agents and customers in the app.
+# Admins sign in with Google (no passwords). The owner Gmail (SGMART_OWNER_EMAIL) is saved
+# on the very first start. The "dev" profile also loads the 22 sample products.
+name: sgmart
+
 services:
   mysql:
     image: mysql:8.4
+    restart: unless-stopped
     environment:
-      MYSQL_ROOT_PASSWORD: root
-      MYSQL_DATABASE: SGMart
-      MYSQL_USER: Sgmart
-      MYSQL_PASSWORD: sgmart
-      TZ: Asia/Kolkata
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:-root}
+      MYSQL_DATABASE: sgmart
+      MYSQL_USER: sgmart_app
+      MYSQL_PASSWORD: ${DB_PASSWORD:-sgmart}
+      TZ: UTC
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_0900_ai_ci
+      - --default-time-zone=+00:00
     ports:
-      - "3310:3306"
+      - "3310:3306"            # MySQL Workbench from your laptop: localhost:3310
     volumes:
       - sgmart-mysql:/var/lib/mysql
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-proot"]
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-p${DB_ROOT_PASSWORD:-root}"]
       interval: 5s
       timeout: 5s
       retries: 30
 
-  SGmart-backend:
+  sgmart-backend:
     build: .
+    restart: unless-stopped
     depends_on:
       mysql:
         condition: service_healthy
     environment:
-      DB_URL: jdbc:mysql://mysql:3306/SGmart_db
-      DB_USERNAME: SGmart
-      DB_PASSWORD: SGmart
-      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:8080,http://localhost:5173}
-      # Sign-in. Set a real secret outside local use; the first admin is created on first start.
-      SGmart_AUTH_SECRET: ${SGmart_AUTH_SECRET:-local-dev-secret-change-me}
-      SGmart_ADMIN_EMAIL: ${SGmart_ADMIN_EMAIL:-}
-      SGmart_ADMIN_PASSWORD: ${SGmart_ADMIN_PASSWORD:-}
-      SGmart_ADMIN_NAME: ${SGmart_ADMIN_NAME:-SGmart Admin}
+      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-dev}
+      PORT: "9001"
+      DB_URL: jdbc:mysql://mysql:3306/sgmart?characterEncoding=UTF-8&connectionTimeZone=UTC&forceConnectionTimeZoneToSession=true&allowPublicKeyRetrieval=true
+      DB_USERNAME: sgmart_app
+      DB_PASSWORD: ${DB_PASSWORD:-sgmart}
+      # Google sign-in (Google Auth Platform > Clients)
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:?Set GOOGLE_CLIENT_ID in .env}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:?Set GOOGLE_CLIENT_SECRET in .env}
+      # First owner and store phone: used on the very first start only, then edit in Admin > Settings
+      SGMART_OWNER_EMAIL: ${SGMART_OWNER_EMAIL:?Set SGMART_OWNER_EMAIL (your Gmail) in .env}
+      SGMART_OWNER_NAME: ${SGMART_OWNER_NAME:-Store Owner}
+      SGMART_STORE_PHONE: ${SGMART_STORE_PHONE:?Set SGMART_STORE_PHONE in .env (10 digits, no +91)}
+      # Where people open the web app
+      SGMART_PUBLIC_URL: ${SGMART_PUBLIC_URL:-http://localhost:5173}
+      SGMART_CORS_ORIGINS: ${SGMART_CORS_ORIGINS:-http://localhost:5173}
+      # Product photos, kept in the sgmart-images volume
+      SGMART_IMAGES_DIR: /app/data/images
+      # Optional "I'm not a robot" check; empty = off
+      TURNSTILE_SECRET: ${TURNSTILE_SECRET:-}
+      JAVA_TOOL_OPTIONS: -XX:MaxRAMPercentage=75 -Duser.timezone=UTC
     ports:
       - "9001:9001"
+    volumes:
+      - sgmart-images:/app/data/images
 
 volumes:
-  SGmart-mysql:
+  sgmart-mysql:
+  sgmart-images:
