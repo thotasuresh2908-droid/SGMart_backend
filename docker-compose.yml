@@ -1,0 +1,45 @@
+# LineBook backend + MySQL.
+#
+#   docker compose up --build                                  # http://localhost:9000
+#
+# The database starts empty apart from the package catalogue. Set SGmart_ADMIN_EMAIL and
+# Sgmart_ADMIN_PASSWORD below to get your first sign-in, then add agents and customers in the app.
+services:
+  mysql:
+    image: mysql:8.4
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: SGMart
+      MYSQL_USER: Sgmart
+      MYSQL_PASSWORD: sgmart
+      TZ: Asia/Kolkata
+    ports:
+      - "3310:3306"
+    volumes:
+      - sgmart-mysql:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-proot"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  SGmart-backend:
+    build: .
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      DB_URL: jdbc:mysql://mysql:3306/SGmart_db
+      DB_USERNAME: SGmart
+      DB_PASSWORD: SGmart
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:8080,http://localhost:5173}
+      # Sign-in. Set a real secret outside local use; the first admin is created on first start.
+      SGmart_AUTH_SECRET: ${SGmart_AUTH_SECRET:-local-dev-secret-change-me}
+      SGmart_ADMIN_EMAIL: ${SGmart_ADMIN_EMAIL:-}
+      SGmart_ADMIN_PASSWORD: ${SGmart_ADMIN_PASSWORD:-}
+      SGmart_ADMIN_NAME: ${SGmart_ADMIN_NAME:-SGmart Admin}
+    ports:
+      - "9001:9001"
+
+volumes:
+  SGmart-mysql:
