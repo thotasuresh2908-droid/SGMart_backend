@@ -1,8 +1,8 @@
-# SGMart API - settings shared by every environment.
+ # SGMart API - settings shared by every environment.
 # Secrets come from environment variables (see .env.example).
 
 server:
-  port: ${PORT:9001}
+  port: ${PORT:9001}          # Render and other hosts can set PORT; 9001 otherwise
   servlet:
     session:
       timeout: 7d
@@ -21,7 +21,7 @@ spring:
       max-request-size: 6MB
 
   datasource:
-    # Full JDBC URL comes from the DB_URL env var, e.g.
+    # Full JDBC URL from the DB_URL env var. Keep the time-zone settings, SGMART stores all times in UTC:
     # jdbc:mysql://<host>:<port>/<db>?sslMode=REQUIRED&characterEncoding=UTF-8&connectionTimeZone=UTC&forceConnectionTimeZoneToSession=true
     url: ${DB_URL}
     username: ${DB_USERNAME}
@@ -30,7 +30,9 @@ spring:
     hikari:
       maximum-pool-size: ${DB_POOL_SIZE:5}
       minimum-idle: ${DB_MIN_IDLE:1}
-      max-lifetime: ${DB_MAX_LIFETIME_MS:300000}
+      max-lifetime: ${DB_MAX_LIFETIME_MS:300000}     # 5 min: replace connections before the cloud DB closes them
+      idle-timeout: ${DB_IDLE_TIMEOUT_MS:120000}     # 2 min: must be less than max-lifetime
+      keepalive-time: ${DB_KEEPALIVE_MS:60000}       # 1 min: keeps idle connections alive
       connection-timeout: 30000
 
   jpa:
