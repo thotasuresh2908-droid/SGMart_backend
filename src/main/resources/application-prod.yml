@@ -1,38 +1,29 @@
 
-server:
-  forward-headers-strategy: native
-  servlet:
-    session:
-      cookie:
-        secure: true
-        http-only: true
-        same-site: lax
-
 spring:
   security:
     oauth2:
       client:
         registration:
-          google:
+          google-admin:
+            provider: google
             client-id: ${GOOGLE_CLIENT_ID}
             client-secret: ${GOOGLE_CLIENT_SECRET}
             scope:
               - openid
               - profile
               - email
+            redirect-uri: "{baseUrl}/login/oauth2/code/{registrationId}"
 
-logging:
-  level:
-    root: INFO
-    com.sgmart: INFO
-    org.springframework.security: INFO
-    org.springframework.security.oauth2: INFO
+          google-customer:
+            provider: google
+            client-id: ${GOOGLE_CLIENT_ID}
+            client-secret: ${GOOGLE_CLIENT_SECRET}
+            scope:
+              - openid
+              - profile
+              - email
+            redirect-uri: "{baseUrl}/login/oauth2/code/{registrationId}"
 
-management:
-  endpoints:
-    web:
-      exposure:
-        include: health,info
-  endpoint:
-    health:
-      show-details: never
+        provider:
+          google:
+            issuer-uri: https://accounts.google.com
