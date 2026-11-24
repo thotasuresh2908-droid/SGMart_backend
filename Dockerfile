@@ -1,4 +1,6 @@
-FROM maven:3.9-eclipse-temurin-21 AS build
+
+# Build stage
+FROM maven:3.9.9-eclipse-temurin-21 AS build
 
 WORKDIR /workspace
 
@@ -7,17 +9,25 @@ COPY src ./src
 
 RUN mvn clean package -DskipTests
 
+# Runtime stage
 FROM eclipse-temurin:21-jre
 
 WORKDIR /app
 
-# Create the app user, and a folder it is allowed to write to (product images).
-RUN useradd --system --no-create-home sgmart \
- && mkdir -p /app/data/images \
- && chown -R sgmart:sgmart /app
+# Create application user
+RUN useradd --system --no-create-home sgmart
 
-COPY --from=build --chown=sgmart:sgmart /workspace/target/sgmart-api-0.1.0-SNAPSHOT.jar app.jar
+# Create data directory and grant permissions
+RUN mkdir -p /app/data \
+    && chown -R sgmart:sgmart /app
 
+# Copy application jar
+COPY --from=build /workspace/target/sgmart-api-0.1.0-SNAPSHOT.jar app.jar
+
+# Ensure application user owns application files
+RUN chown -R sgmart:sgmart /app
+
+# Run as non-root user
 USER sgmart
 
 EXPOSE 9001
