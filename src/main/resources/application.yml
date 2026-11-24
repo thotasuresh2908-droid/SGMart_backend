@@ -1,14 +1,24 @@
+
 # SGMart API - settings shared by every environment.
-# Secrets come from environment variables (see .env.example); never put them in this file.
+# Secrets come from environment variables (see .env.example).
+
 server:
   port: ${PORT:9001}
+  servlet:
+    session:
+      timeout: 7d
+      cookie:
+        name: SGMART_SESSION
+        http-only: true
+        same-site: lax
+
 spring:
   application:
     name: sgmart-api
 
   servlet:
     multipart:
-      max-file-size: 5MB          # product photos
+      max-file-size: 5MB
       max-request-size: 6MB
 
   datasource:
@@ -19,10 +29,10 @@ spring:
   jpa:
     open-in-view: false
     hibernate:
-      ddl-auto: validate          # Flyway owns the schema; Hibernate only checks the entities match it
+      ddl-auto: validate
     properties:
       hibernate.jdbc.time_zone: UTC
-      hibernate.default_batch_fetch_size: 50   # loads order items for a page of orders in one query
+      hibernate.default_batch_fetch_size: 50
 
   flyway:
     locations: classpath:db/migration
@@ -35,7 +45,6 @@ spring:
     oauth2:
       client:
         registration:
-          # Two sign-in buttons on the same Google OAuth client.
           google-admin:
             provider: google
             client-id: ${GOOGLE_CLIENT_ID}
@@ -49,15 +58,6 @@ spring:
             scope: openid, email, profile
             redirect-uri: "${sgmart.public-url}/login/oauth2/code/{registrationId}"
 
-server:
-  servlet:
-    session:
-      timeout: 7d
-      cookie:
-        name: SGMART_SESSION
-        http-only: true
-        same-site: lax
-
 management:
   endpoints:
     web:
@@ -68,8 +68,8 @@ sgmart:
   public-url: ${SGMART_PUBLIC_URL:http://localhost:5173}
   cors-allowed-origins: ${SGMART_CORS_ORIGINS:http://localhost:5173}
   images:
-    dir: ${SGMART_IMAGES_DIR:data/images}   # product photos folder; mount as a volume in production
+    dir: ${SGMART_IMAGES_DIR:data/images}
   captcha:
-    turnstile-secret: ${TURNSTILE_SECRET:}   # empty = CAPTCHA off (local development only)
+    turnstile-secret: ${TURNSTILE_SECRET:}
   orders:
     max-per-ip-per-10-minutes: ${SGMART_MAX_ORDERS_PER_IP:5}
