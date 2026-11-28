@@ -109,3 +109,23 @@ sgmart:
 
   orders:
     max-per-ip-per-10-minutes: ${SGMART_MAX_ORDERS_PER_IP:5}
+
+
+# Temporary Google OAuth debugging logs
+logging:
+  level:
+
+    # OAuth2 authorization and callback processing
+    org.springframework.security.oauth2.client: DEBUG
+
+    # OAuth2 authentication and failure handling
+    org.springframework.security.web.authentication: DEBUG
+
+    # OAuth2 core authentication processing
+    org.springframework.security.oauth2.core: DEBUG
+
+    # Your custom Google authentication service
+    com.sgmart.auth: DEBUG
+
+    # Your application authentication package
+    com.sgmart: INFO
