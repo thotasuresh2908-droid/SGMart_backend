@@ -1,15 +1,19 @@
- # SGMart API - settings shared by every environment.
-# Secrets come from environment variables (see .env.example).
+
+# SGMart API - Shared configuration
 
 server:
-  port: ${PORT:9001}          # Render and other hosts can set PORT; 9001 otherwise
+  port: ${PORT:9001}
+
+  forward-headers-strategy: framework
+
   servlet:
     session:
       timeout: 7d
       cookie:
         name: SGMART_SESSION
         http-only: true
-        same-site: lax
+        secure: true
+        same-site: none
 
 spring:
   application:
@@ -21,30 +25,32 @@ spring:
       max-request-size: 6MB
 
   datasource:
-    # Full JDBC URL from the DB_URL env var. Keep the time-zone settings, SGMART stores all times in UTC:
-    # jdbc:mysql://<host>:<port>/<db>?sslMode=REQUIRED&characterEncoding=UTF-8&connectionTimeZone=UTC&forceConnectionTimeZoneToSession=true
     url: ${DB_URL}
     username: ${DB_USERNAME}
     password: ${DB_PASSWORD}
     driver-class-name: ${DB_DRIVER:com.mysql.cj.jdbc.Driver}
+
     hikari:
       maximum-pool-size: ${DB_POOL_SIZE:5}
       minimum-idle: ${DB_MIN_IDLE:1}
-      max-lifetime: ${DB_MAX_LIFETIME_MS:300000}     # 5 min: replace connections before the cloud DB closes them
-      idle-timeout: ${DB_IDLE_TIMEOUT_MS:120000}     # 2 min: must be less than max-lifetime
-      keepalive-time: ${DB_KEEPALIVE_MS:60000}       # 1 min: keeps idle connections alive
+      max-lifetime: ${DB_MAX_LIFETIME_MS:300000}
+      idle-timeout: ${DB_IDLE_TIMEOUT_MS:120000}
+      keepalive-time: ${DB_KEEPALIVE_MS:60000}
       connection-timeout: 30000
 
   jpa:
     open-in-view: false
+
     hibernate:
       ddl-auto: validate
+
     properties:
       hibernate.jdbc.time_zone: UTC
       hibernate.default_batch_fetch_size: 50
 
   flyway:
     locations: classpath:db/migration
+
     placeholders:
       owner_email: ${SGMART_OWNER_EMAIL}
       owner_name: ${SGMART_OWNER_NAME:Store Owner}
@@ -54,18 +60,32 @@ spring:
     oauth2:
       client:
         registration:
+
+          # Admin Google Login
           google-admin:
             provider: google
             client-id: ${GOOGLE_CLIENT_ID}
             client-secret: ${GOOGLE_CLIENT_SECRET}
-            scope: openid, email, profile
-            redirect-uri: "${sgmart.public-url}/login/oauth2/code/{registrationId}"
+            scope:
+              - openid
+              - email
+              - profile
+            redirect-uri: "${SGMART_BACKEND_URL:https://sgmart-backend.onrender.com}/login/oauth2/code/{registrationId}"
+
+          # Customer Google Login
           google-customer:
             provider: google
             client-id: ${GOOGLE_CLIENT_ID}
             client-secret: ${GOOGLE_CLIENT_SECRET}
-            scope: openid, email, profile
-            redirect-uri: "${sgmart.public-url}/login/oauth2/code/{registrationId}"
+            scope:
+              - openid
+              - email
+              - profile
+            redirect-uri: "${SGMART_BACKEND_URL:https://sgmart-backend.onrender.com}/login/oauth2/code/{registrationId}"
+
+        provider:
+          google:
+            issuer-uri: https://accounts.google.com
 
 management:
   endpoints:
@@ -74,11 +94,18 @@ management:
         include: health
 
 sgmart:
-  public-url: ${SGMART_PUBLIC_URL:http://localhost:5173}
-  cors-allowed-origins: ${SGMART_CORS_ORIGINS:http://localhost:5173}
+
+  # React frontend URL
+  public-url: ${SGMART_PUBLIC_URL:https://sg-mart-ui.vercel.app}
+
+  # React frontend CORS origin
+  cors-allowed-origins: ${SGMART_CORS_ORIGINS:https://sg-mart-ui.vercel.app}
+
   images:
     dir: ${SGMART_IMAGES_DIR:data/images}
+
   captcha:
     turnstile-secret: ${TURNSTILE_SECRET:}
+
   orders:
     max-per-ip-per-10-minutes: ${SGMART_MAX_ORDERS_PER_IP:5}
