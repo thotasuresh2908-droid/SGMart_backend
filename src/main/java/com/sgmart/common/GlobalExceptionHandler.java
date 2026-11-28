@@ -1,13 +1,18 @@
 package com.sgmart.common;
 
+import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.HttpStatusCode;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.core.AuthenticationException;
 import org.springframework.validation.FieldError;
+import org.springframework.web.ErrorResponse;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -49,5 +54,55 @@ public class GlobalExceptionHandler {
         log.warn("Data integrity violation: {}", ex.getMostSpecificCause().getMessage());
         return ResponseEntity.status(HttpStatus.CONFLICT)
                 .body(ApiError.of("CONFLICT", "This conflicts with data that already exists."));
+    }
+
+    /**
+     * Everything not handled above.
+     *  - Permission errors (from @PreAuthorize) are passed on so Spring Security answers 401/403.
+     *  - Spring's own request errors (wrong method, wrong content type, unknown path ...) keep
+     *    their 4xx status.
+     *  - Anything else is a bug: log it with its stack trace and answer a clean 500 JSON.
+     * Without this, a hidden server error reached the browser as a confusing 403 for signed-in
+     * shoppers and 401 for guests.
+     */
+    @ExceptionHandler(Exception.class)
+    public ResponseEntity<ApiError> handleAny(Exception ex, HttpServletRequest request) throws Exception {
+        if (ex instanceof AccessDeniedException || ex instanceof AuthenticationException) {
+            throw ex;
+        }
+        if (ex instanceof ErrorResponse spring) {
+            HttpStatusCode status = spring.getStatusCode();
+            if (status.is5xxServerError()) {
+                log.error("{} {} failed", request.getMethod(), request.getRequestURI(), ex);
+                return ResponseEntity.status(status).body(serverError());
+            }
+            String code;
+            String message;
+            switch (status.value()) {
+                case 404 -> {
+                    code = "NOT_FOUND";
+                    message = "Not found.";
+                }
+                case 405 -> {
+                    code = "METHOD_NOT_ALLOWED";
+                    message = "This action isn't allowed here.";
+                }
+                case 415 -> {
+                    code = "UNSUPPORTED_MEDIA_TYPE";
+                    message = "The request type isn't supported.";
+                }
+                default -> {
+                    code = "BAD_REQUEST";
+                    message = "The request could not be processed. Please check the values sent.";
+                }
+            }
+            return ResponseEntity.status(status).headers(spring.getHeaders()).body(ApiError.of(code, message));
+        }
+        log.error("{} {} failed", request.getMethod(), request.getRequestURI(), ex);
+        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(serverError());
+    }
+
+    private static ApiError serverError() {
+        return ApiError.of("SERVER_ERROR", "Something went wrong on our side. Please try again.");
     }
 }
