@@ -1,9 +1,14 @@
-
 package com.sgmart.config;
 
 import com.sgmart.auth.SgMartOidcUserService;
 import com.sgmart.auth.SgMartPrincipal;
 
+import jakarta.servlet.http.Cookie;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
@@ -14,26 +19,43 @@ import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.oauth2.core.OAuth2AuthenticationException;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.access.AccessDeniedHandler;
 import org.springframework.security.web.authentication.AuthenticationFailureHandler;
 import org.springframework.security.web.authentication.AuthenticationSuccessHandler;
 import org.springframework.security.web.authentication.HttpStatusEntryPoint;
 import org.springframework.security.web.authentication.logout.HttpStatusReturningLogoutSuccessHandler;
 import org.springframework.security.web.authentication.www.BasicAuthenticationFilter;
 import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
+import org.springframework.security.web.csrf.CsrfException;
 import org.springframework.security.web.csrf.CsrfTokenRequestAttributeHandler;
-import org.springframework.security.web.csrf.CsrfTokenRequestHandler;
-import org.springframework.security.web.csrf.XorCsrfTokenRequestAttributeHandler;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.function.Supplier;
+import java.util.Set;
 
+/**
+ * Who may call what.
+ *
+ * Access levels:
+ *   PUBLIC    store, catalog, product photos, session check, CSRF token, guest checkout and
+ *             order tracking (guests prove access to an order with its X-Tracking-Token).
+ *   CUSTOMER  /api/v1/me/** (signed in with Google as a shopper).
+ *   ADMIN     /api/v1/admin/** (OWNER-only actions are guarded again with @PreAuthorize).
+ *   Everything else is denied. New endpoints are NOT public until listed here.
+ */
 @Configuration
 @EnableWebSecurity
 @EnableMethodSecurity
 public class SecurityConfig {
+
+    private static final Logger log = LoggerFactory.getLogger(SecurityConfig.class);
+
+    private static final String CSRF_COOKIE = "XSRF-TOKEN";
+    private static final String CSRF_HEADER = "X-XSRF-TOKEN";
 
     @Bean
     public SecurityFilterChain filterChain(
@@ -45,11 +67,12 @@ public class SecurityConfig {
         CookieCsrfTokenRepository csrfRepository =
                 CookieCsrfTokenRepository.withHttpOnlyFalse();
 
-        csrfRepository.setCookieName("XSRF-TOKEN");
-        csrfRepository.setHeaderName("X-XSRF-TOKEN");
+        csrfRepository.setCookieName(CSRF_COOKIE);
+        csrfRepository.setHeaderName(CSRF_HEADER);
         csrfRepository.setCookiePath("/");
 
-        // HTTPS cross-origin cookie configuration.
+        // The web app (Vercel) and the API (Render) are different sites, so the
+        // cookie must be Secure + SameSite=None to be sent on API calls.
         csrfRepository.setCookieCustomizer(cookie -> cookie
                 .secure(true)
                 .httpOnly(false)
@@ -58,90 +81,68 @@ public class SecurityConfig {
         );
 
         http
-                // SPA CSRF protection.
+                // CSRF: the browser sends the token back in the X-XSRF-TOKEN header.
+                // It gets the token from GET /api/v1/auth/csrf (works cross-site) or,
+                // when the web app and API share one address, from the XSRF-TOKEN cookie.
+                // The plain handler is the one Spring documents for single-page apps.
                 .csrf(csrf -> csrf
                         .csrfTokenRepository(csrfRepository)
-                        .csrfTokenRequestHandler(
-                                spaCsrfTokenRequestHandler()
-                        )
+                        .csrfTokenRequestHandler(new CsrfTokenRequestAttributeHandler())
                 )
 
-                // Generate and expose the CSRF token.
-                .addFilterAfter(
-                        new CsrfCookieFilter(),
-                        BasicAuthenticationFilter.class
-                )
+                // Make sure the XSRF-TOKEN cookie is written on every response.
+                .addFilterAfter(new CsrfCookieFilter(), BasicAuthenticationFilter.class)
 
-                // CORS.
                 .cors(Customizer.withDefaults())
 
-                // Authorization.
                 .authorizeHttpRequests(auth -> auth
 
-                        .requestMatchers(
-                                HttpMethod.OPTIONS,
-                                "/**"
-                        ).permitAll()
+                        .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
 
-                        // Public store APIs.
-                        .requestMatchers(
-                                HttpMethod.GET,
-                                "/categories",
-                                "/categories/**",
-                                "/products",
-                                "/products/**",
-                                "/store",
+                        // Spring Boot forwards every error (400, 404, 500 ...) to /error.
+                        // If /error is denied, a signed-in shopper sees a bare 403 (and a
+                        // guest a 401) instead of the real problem.
+                        .requestMatchers("/error").permitAll()
+
+                        // ---- PUBLIC: read-only store APIs
+                        .requestMatchers(HttpMethod.GET,
+                                "/api/v1/store",
                                 "/api/v1/categories",
                                 "/api/v1/categories/**",
                                 "/api/v1/products",
                                 "/api/v1/products/**",
-                                "/api/v1/store"
+                                "/api/v1/images/**",
+                                "/api/v1/auth/session",
+                                "/api/v1/auth/csrf"
                         ).permitAll()
 
-                        // Guest session status.
-                        .requestMatchers(
-                                HttpMethod.GET,
-                                "/api/v1/auth/session"
+                        // ---- ADMIN
+                        .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
+
+                        // ---- CUSTOMER (signed in with Google)
+                        .requestMatchers("/api/v1/me", "/api/v1/me/**").hasRole("CUSTOMER")
+
+                        // ---- PUBLIC: guest and signed-in checkout, tracking, edit, cancel
+                        .requestMatchers(HttpMethod.POST,
+                                "/api/v1/orders",
+                                "/api/v1/orders/lookup",
+                                "/api/v1/orders/*/cancel"
                         ).permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/v1/orders/*").permitAll()
+                        .requestMatchers(HttpMethod.PUT, "/api/v1/orders/*/items").permitAll()
 
-                        // Admin APIs.
-                        .requestMatchers(
-                                "/api/v1/admin/**"
-                        ).hasRole("ADMIN")
+                        // ---- Google OAuth
+                        .requestMatchers("/oauth2/**", "/login/oauth2/**").permitAll()
 
-                        // Customer profile APIs.
-                        .requestMatchers(
-                                "/api/v1/me",
-                                "/api/v1/me/**"
-                        ).hasRole("CUSTOMER")
+                        // ---- WebSocket (every SUBSCRIBE is checked by StompAuthInterceptor)
+                        .requestMatchers("/ws", "/ws/**").permitAll()
 
-                        // Other versioned APIs.
-                        .requestMatchers(
-                                "/api/v1/**"
-                        ).permitAll()
-
-                        // Google OAuth.
-                        .requestMatchers(
-                                "/oauth2/**",
-                                "/login/oauth2/**"
-                        ).permitAll()
-
-                        // WebSocket.
-                        .requestMatchers(
-                                "/ws",
-                                "/ws/**"
-                        ).permitAll()
-
-                        // Health check.
-                        .requestMatchers(
-                                "/actuator/health",
-                                "/actuator/health/**"
-                        ).permitAll()
+                        // ---- Health check
+                        .requestMatchers("/actuator/health", "/actuator/health/**").permitAll()
 
                         .anyRequest().denyAll()
                 )
 
-                // Google OAuth login.
                 .oauth2Login(oauth -> oauth
                         .userInfoEndpoint(userInfo ->
                                 userInfo.oidcUserService(oidcUserService)
@@ -150,22 +151,17 @@ public class SecurityConfig {
                         .failureHandler(failureHandler(props))
                 )
 
-                // API authentication failure.
-                .exceptionHandling(ex ->
-                        ex.authenticationEntryPoint(
-                                new HttpStatusEntryPoint(
-                                        HttpStatus.UNAUTHORIZED
-                                )
-                        )
+                .exceptionHandling(ex -> ex
+                        // Not signed in -> 401
+                        .authenticationEntryPoint(new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED))
+                        // Signed in but not allowed, or CSRF check failed -> 403 with a JSON reason
+                        .accessDeniedHandler(accessDeniedHandler())
                 )
 
-                // Logout.
                 .logout(logout -> logout
                         .logoutUrl("/api/v1/auth/logout")
                         .logoutSuccessHandler(
-                                new HttpStatusReturningLogoutSuccessHandler(
-                                        HttpStatus.NO_CONTENT
-                                )
+                                new HttpStatusReturningLogoutSuccessHandler(HttpStatus.NO_CONTENT)
                         )
                 );
 
@@ -173,55 +169,48 @@ public class SecurityConfig {
     }
 
     /**
-     * SPA CSRF handler.
-     *
-     * Supports the plain token sent in X-XSRF-TOKEN
-     * while retaining Spring Security's BREACH protection
-     * for request attributes.
+     * 403 answers in the same JSON shape as every other API error, and tell a CSRF
+     * failure ("CSRF_INVALID", the browser can fetch a new token and retry) apart from a
+     * real permission problem ("FORBIDDEN"). The reason is also logged so it shows up in
+     * the Render logs.
      */
-    private CsrfTokenRequestHandler spaCsrfTokenRequestHandler() {
+    private AccessDeniedHandler accessDeniedHandler() {
+        return (request, response, ex) -> {
+            boolean csrf = ex instanceof CsrfException;
 
-        CsrfTokenRequestAttributeHandler plain =
-                new CsrfTokenRequestAttributeHandler();
+            log.warn("403 {} {} reason={} origin={} signedIn={} csrfHeader={} csrfCookie={}",
+                    request.getMethod(),
+                    request.getRequestURI(),
+                    ex.getClass().getSimpleName(),
+                    request.getHeader("Origin"),
+                    request.getUserPrincipal() != null,
+                    request.getHeader(CSRF_HEADER) != null,
+                    hasCookie(request, CSRF_COOKIE));
 
-        XorCsrfTokenRequestAttributeHandler xor =
-                new XorCsrfTokenRequestAttributeHandler();
+            String code = csrf ? "CSRF_INVALID" : "FORBIDDEN";
+            String message = csrf
+                    ? "Your session expired or your browser blocked cookies. Please refresh the page and try again."
+                    : "You don't have permission to do this.";
 
-        return new CsrfTokenRequestHandler() {
-
-            @Override
-            public void handle(
-                    jakarta.servlet.http.HttpServletRequest request,
-                    jakarta.servlet.http.HttpServletResponse response,
-                    Supplier<org.springframework.security.web.csrf.CsrfToken> deferredToken
-            ) {
-                xor.handle(request, response, deferredToken);
-
-                // Force token generation so the cookie is written.
-                deferredToken.get().getToken();
-            }
-
-            @Override
-            public String resolveCsrfTokenValue(
-                    jakarta.servlet.http.HttpServletRequest request,
-                    org.springframework.security.web.csrf.CsrfToken csrfToken
-            ) {
-                String headerValue =
-                        request.getHeader(csrfToken.getHeaderName());
-
-                if (headerValue != null && !headerValue.isBlank()) {
-                    return plain.resolveCsrfTokenValue(
-                            request,
-                            csrfToken
-                    );
-                }
-
-                return xor.resolveCsrfTokenValue(
-                        request,
-                        csrfToken
-                );
-            }
+            response.setStatus(HttpServletResponse.SC_FORBIDDEN);
+            response.setContentType("application/json");
+            response.setCharacterEncoding("UTF-8");
+            response.getWriter().write(
+                    "{\"code\":\"" + code + "\",\"message\":\"" + message + "\",\"field\":null}");
         };
+    }
+
+    private static boolean hasCookie(HttpServletRequest request, String name) {
+        Cookie[] cookies = request.getCookies();
+        if (cookies == null) {
+            return false;
+        }
+        for (Cookie c : cookies) {
+            if (name.equals(c.getName())) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
@@ -229,9 +218,7 @@ public class SecurityConfig {
      * Admin -> Admin orders.
      * Customer -> Store homepage.
      */
-    private AuthenticationSuccessHandler successHandler(
-            SgMartProperties props
-    ) {
+    private AuthenticationSuccessHandler successHandler(SgMartProperties props) {
 
         return (request, response, authentication) -> {
 
@@ -251,9 +238,7 @@ public class SecurityConfig {
     /**
      * Google login failure handler.
      */
-    private AuthenticationFailureHandler failureHandler(
-            SgMartProperties props
-    ) {
+    private AuthenticationFailureHandler failureHandler(SgMartProperties props) {
 
         return (request, response, exception) -> {
 
@@ -263,43 +248,40 @@ public class SecurityConfig {
                             : "failed";
 
             boolean adminFlow = request.getRequestURI()
-                    .contains(
-                            SgMartOidcUserService.ADMIN_REGISTRATION
-                    );
+                    .contains(SgMartOidcUserService.ADMIN_REGISTRATION);
 
             String target = adminFlow
                     ? "/admin/login?error="
-                    + (
-                            SgMartOidcUserService.ERROR_NO_ADMIN_ACCESS
-                                    .equals(code)
-                                    ? "no_access"
-                                    : "failed"
-                    )
+                    + (SgMartOidcUserService.ERROR_NO_ADMIN_ACCESS.equals(code)
+                    ? "no_access"
+                    : "failed")
                     : "/?login_error="
-                    + (
-                            SgMartOidcUserService.ERROR_EMAIL_NOT_VERIFIED
-                                    .equals(code)
-                                    ? "email_not_verified"
-                                    : "failed"
-                    );
+                    + (SgMartOidcUserService.ERROR_EMAIL_NOT_VERIFIED.equals(code)
+                    ? "email_not_verified"
+                    : "failed");
 
             response.sendRedirect(props.publicUrl() + target);
         };
     }
 
     /**
-     * CORS configuration.
+     * CORS: which web app addresses may call the API from a browser.
+     * Allowed = sgmart.cors-allowed-origins plus sgmart.public-url. A trailing "/" is
+     * ignored, because the browser's Origin header never has one and a mismatch is
+     * answered with 403 "Invalid CORS request".
      */
     @Bean
-    public CorsConfigurationSource corsConfigurationSource(
-            SgMartProperties props
-    ) {
+    public CorsConfigurationSource corsConfigurationSource(SgMartProperties props) {
+
+        Set<String> origins = new LinkedHashSet<>();
+        if (props.corsAllowedOrigins() != null) {
+            props.corsAllowedOrigins().forEach(o -> addOrigin(origins, o));
+        }
+        addOrigin(origins, props.publicUrl());
 
         CorsConfiguration config = new CorsConfiguration();
 
-        config.setAllowedOrigins(
-                props.corsAllowedOrigins()
-        );
+        config.setAllowedOrigins(new ArrayList<>(origins));
 
         config.setAllowedMethods(List.of(
                 "GET",
@@ -315,7 +297,7 @@ public class SecurityConfig {
                 "Authorization",
                 "Accept",
                 "X-Requested-With",
-                "X-XSRF-TOKEN",
+                CSRF_HEADER,
                 "X-Tracking-Token"
         ));
 
@@ -328,5 +310,18 @@ public class SecurityConfig {
         source.registerCorsConfiguration("/**", config);
 
         return source;
+    }
+
+    private static void addOrigin(Set<String> target, String origin) {
+        if (origin == null) {
+            return;
+        }
+        String o = origin.trim();
+        while (o.endsWith("/")) {
+            o = o.substring(0, o.length() - 1);
+        }
+        if (!o.isEmpty()) {
+            target.add(o);
+        }
     }
 }
