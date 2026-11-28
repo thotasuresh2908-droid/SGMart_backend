@@ -1,9 +1,9 @@
 
-# SGMart API - Shared configuration
+# SGMart API - settings shared by every environment.
+# Secrets come from environment variables.
 
 server:
   port: ${PORT:9001}
-
   forward-headers-strategy: framework
 
   servlet:
@@ -40,17 +40,16 @@ spring:
 
   jpa:
     open-in-view: false
-
     hibernate:
       ddl-auto: validate
-
     properties:
-      hibernate.jdbc.time_zone: UTC
-      hibernate.default_batch_fetch_size: 50
+      hibernate:
+        jdbc:
+          time_zone: UTC
+        default_batch_fetch_size: 50
 
   flyway:
     locations: classpath:db/migration
-
     placeholders:
       owner_email: ${SGMART_OWNER_EMAIL}
       owner_name: ${SGMART_OWNER_NAME:Store Owner}
@@ -61,7 +60,7 @@ spring:
       client:
         registration:
 
-          # Admin Google Login
+          # Google Admin Login
           google-admin:
             provider: google
             client-id: ${GOOGLE_CLIENT_ID}
@@ -72,7 +71,7 @@ spring:
               - profile
             redirect-uri: "${SGMART_BACKEND_URL:https://sgmart-backend.onrender.com}/login/oauth2/code/{registrationId}"
 
-          # Customer Google Login
+          # Google Customer Login
           google-customer:
             provider: google
             client-id: ${GOOGLE_CLIENT_ID}
@@ -94,11 +93,8 @@ management:
         include: health
 
 sgmart:
-
-  # React frontend URL
   public-url: ${SGMART_PUBLIC_URL:https://sg-mart-ui.vercel.app}
 
-  # React frontend CORS origin
   cors-allowed-origins: ${SGMART_CORS_ORIGINS:https://sg-mart-ui.vercel.app}
 
   images:
@@ -110,22 +106,13 @@ sgmart:
   orders:
     max-per-ip-per-10-minutes: ${SGMART_MAX_ORDERS_PER_IP:5}
 
-
-# Temporary Google OAuth debugging logs
+# Temporary OAuth debugging.
+# After fixing login, change DEBUG levels back to INFO.
 logging:
   level:
-
-    # OAuth2 authorization and callback processing
     org.springframework.security.oauth2.client: DEBUG
-
-    # OAuth2 authentication and failure handling
-    org.springframework.security.web.authentication: DEBUG
-
-    # OAuth2 core authentication processing
     org.springframework.security.oauth2.core: DEBUG
-
-    # Your custom Google authentication service
+    org.springframework.security.web.authentication: DEBUG
+    org.springframework.security.web.FilterChainProxy: INFO
     com.sgmart.auth: DEBUG
-
-    # Your application authentication package
     com.sgmart: INFO
