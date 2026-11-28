@@ -8,8 +8,8 @@ import org.springframework.web.socket.config.annotation.EnableWebSocketMessageBr
 import org.springframework.web.socket.config.annotation.StompEndpointRegistry;
 import org.springframework.web.socket.config.annotation.WebSocketMessageBrokerConfigurer;
 
-import java.util.ArrayList;
-import java.util.List;
+import java.util.LinkedHashSet;
+import java.util.Set;
 
 /**
  * STOMP over WebSocket at /ws with an in-memory broker for /topic/**.
@@ -29,14 +29,26 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
     @Override
     public void registerStompEndpoints(StompEndpointRegistry registry) {
-        List<String> origins = new ArrayList<>();
+        // Same rule as CORS: a trailing "/" is ignored, because the browser's Origin never has one.
+        Set<String> origins = new LinkedHashSet<>();
         if (props.corsAllowedOrigins() != null) {
-            origins.addAll(props.corsAllowedOrigins());
+            props.corsAllowedOrigins().forEach(o -> addOrigin(origins, o));
         }
-        if (props.publicUrl() != null) {
-            origins.add(props.publicUrl());
-        }
+        addOrigin(origins, props.publicUrl());
         registry.addEndpoint("/ws").setAllowedOriginPatterns(origins.toArray(String[]::new));
+    }
+
+    private static void addOrigin(Set<String> target, String origin) {
+        if (origin == null) {
+            return;
+        }
+        String o = origin.trim();
+        while (o.endsWith("/")) {
+            o = o.substring(0, o.length() - 1);
+        }
+        if (!o.isEmpty()) {
+            target.add(o);
+        }
     }
 
     @Override
