@@ -1,8 +1,8 @@
-
 package com.sgmart.config;
 
 import com.sgmart.auth.SgMartOidcUserService;
 import com.sgmart.auth.SgMartPrincipal;
+
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
@@ -36,7 +36,7 @@ public class SecurityConfig {
             SgMartProperties props) throws Exception {
 
         http
-                // Preserve SPA CSRF protection
+                // SPA CSRF protection
                 .csrf(csrf -> csrf.spa())
 
                 .addFilterAfter(
@@ -44,12 +44,12 @@ public class SecurityConfig {
                         BasicAuthenticationFilter.class
                 )
 
-                // Enable CORS for frontend requests
+                // Enable CORS
                 .cors(Customizer.withDefaults())
 
                 .authorizeHttpRequests(auth -> auth
 
-                        // Allow CORS preflight requests
+                        // Allow browser CORS preflight
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
 
                         // Public store APIs
@@ -62,7 +62,7 @@ public class SecurityConfig {
                                 "/store"
                         ).permitAll()
 
-                        // Guest/customer session status
+                        // Guest session status
                         .requestMatchers(
                                 HttpMethod.GET,
                                 "/auth/session"
@@ -81,14 +81,17 @@ public class SecurityConfig {
                         // Other versioned APIs
                         .requestMatchers("/api/v1/**").permitAll()
 
-                        // Google OAuth endpoints
+                        // Google OAuth
                         .requestMatchers(
                                 "/oauth2/**",
                                 "/login/oauth2/**"
                         ).permitAll()
 
                         // WebSocket
-                        .requestMatchers("/ws", "/ws/**").permitAll()
+                        .requestMatchers(
+                                "/ws",
+                                "/ws/**"
+                        ).permitAll()
 
                         // Health check
                         .requestMatchers(
@@ -96,7 +99,7 @@ public class SecurityConfig {
                                 "/actuator/health/**"
                         ).permitAll()
 
-                        // Deny everything not explicitly configured
+                        // Deny all unconfigured endpoints
                         .anyRequest().denyAll()
                 )
 
@@ -109,10 +112,12 @@ public class SecurityConfig {
                         .failureHandler(failureHandler(props))
                 )
 
-                // API requests without authentication return 401
+                // API authentication failure
                 .exceptionHandling(ex ->
                         ex.authenticationEntryPoint(
-                                new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED)
+                                new HttpStatusEntryPoint(
+                                        HttpStatus.UNAUTHORIZED
+                                )
                         )
                 )
 
@@ -130,8 +135,9 @@ public class SecurityConfig {
     }
 
     /**
-     * Admins go to admin orders.
-     * Customers go back to the shop.
+     * After Google sign-in:
+     * Admin -> Admin orders
+     * Customer -> Store homepage
      */
     private AuthenticationSuccessHandler successHandler(
             SgMartProperties props) {
@@ -152,7 +158,7 @@ public class SecurityConfig {
     }
 
     /**
-     * Handle Google authentication failures.
+     * Google login failure handler.
      */
     private AuthenticationFailureHandler failureHandler(
             SgMartProperties props) {
@@ -165,23 +171,32 @@ public class SecurityConfig {
                             : "failed";
 
             boolean adminFlow = request.getRequestURI()
-                    .contains(SgMartOidcUserService.ADMIN_REGISTRATION);
+                    .contains(
+                            SgMartOidcUserService.ADMIN_REGISTRATION
+                    );
 
             String target = adminFlow
                     ? "/admin/login?error="
-                    + (SgMartOidcUserService.ERROR_NO_ADMIN_ACCESS.equals(code)
-                    ? "no_access" : "failed")
-
+                    + (
+                            SgMartOidcUserService.ERROR_NO_ADMIN_ACCESS
+                                    .equals(code)
+                                    ? "no_access"
+                                    : "failed"
+                    )
                     : "/?login_error="
-                    + (SgMartOidcUserService.ERROR_EMAIL_NOT_VERIFIED.equals(code)
-                    ? "email_not_verified" : "failed");
+                    + (
+                            SgMartOidcUserService.ERROR_EMAIL_NOT_VERIFIED
+                                    .equals(code)
+                                    ? "email_not_verified"
+                                    : "failed"
+                    );
 
             response.sendRedirect(props.publicUrl() + target);
         };
     }
 
     /**
-     * CORS configuration for the deployed React frontend.
+     * CORS configuration.
      */
     @Bean
     public CorsConfigurationSource corsConfigurationSource(
@@ -189,8 +204,9 @@ public class SecurityConfig {
 
         CorsConfiguration config = new CorsConfiguration();
 
-        // Must contain https://sg-mart-ui.vercel.app
-        config.setAllowedOrigins(props.corsAllowedOrigins());
+        config.setAllowedOrigins(
+                props.corsAllowedOrigins()
+        );
 
         config.setAllowedMethods(List.of(
                 "GET",
@@ -211,12 +227,13 @@ public class SecurityConfig {
         ));
 
         config.setAllowCredentials(true);
+
         config.setMaxAge(3600L);
 
         UrlBasedCorsConfigurationSource source =
                 new UrlBasedCorsConfigurationSource();
 
-        // Important: apply CORS to root-level and /api endpoints
+        // Apply CORS to every endpoint
         source.registerCorsConfiguration("/**", config);
 
         return source;
